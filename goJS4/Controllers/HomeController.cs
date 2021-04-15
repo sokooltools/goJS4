@@ -27,7 +27,7 @@ namespace goJS4.Controllers
 
 		public IActionResult Index()
 		{   
-			Title = "Home Page";
+			Title = "goJS4 Home Page";
 			_logger.LogInformation("Entered Index route.");
 			return View();
 		}
