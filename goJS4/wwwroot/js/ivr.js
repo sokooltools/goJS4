@@ -5,19 +5,12 @@ var IvrData = window.IvrData;
 
 var myDiagram;
 
-$(document).ready(function () {
+window.onload = function () {
     init();
-
-    $("#SaveButton").on("click", doSave);
-    $("#ScaleButton").on("click", doScale);
-    $("#SelectButton").on("click", doSelect);
-    $("#AutoFitButton").on("click", doAutoFit);
-    $("#DownloadImageButton").on("click", doDownloadImage);
-
+    bindEvents();
     enableTooltips();
-
     doSelect();
-});
+};
 
 function init() {
     var $ = go.GraphObject.make; // For conciseness in defining templates
@@ -405,7 +398,7 @@ function init() {
 
     myDiagram.addDiagramListener("ViewportBoundsChanged",
         function () {
-            slider.value = scaleField.valueAsNumber = parseFloat(myDiagram.scale.toFixed(2));
+            scaleSlider.value = scaleField.valueAsNumber = parseFloat(myDiagram.scale.toFixed(2));
         });
 
     // Provide a tooltip for the background of the Diagram, when not over any Part.
@@ -492,7 +485,7 @@ function addQuestionNode(e, obj) {
     myDiagram.commit(function (d) {
         const newaction = { text: "New Action", figure: "SevenPointedStar", fill: "pink" };
         //selnode.actions.addNodeData(newaction);
-        
+
         // Add a new node to the Model data
         const newnode = {
             key: getMaxKey() + 1, question: "New Question",
@@ -537,33 +530,39 @@ function getMaxKey() {
 }
 
 function doSave() {
+    document.getElementById("SaveButton").disabled = true;
     const json = myDiagram.model.toJson();
     alert(json);
-    $("#SaveButton").prop("disabled", true);
 };
 
 function enableTooltips() {
     $('[data-toggle="tooltip"]').tooltip(document.getElementById("enableTooltips").checked ? "enable" : "disable");
-    //    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-toggle="tooltip"]'));
-    //    tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-    //        return new bootstrap.Tooltip(tooltipTriggerEl);
-    //    });
+//    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-toggle="tooltip"]'));
+//    tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+//        return  new bootstrap.Tooltip(tooltipTriggerEl);
+//    });
 };
 
-/* Key Select
+/* Key and Scale field select
 -------------------------------------------------- */
-$("#keyField").bind("keyup mouseup", function () { doSelect(); });
+function bindEvents() {
+    document.getElementById("keyField").onkeyup = function () { doSelect(); }; // Needed for arrowkey press to work.
+    document.getElementById("keyField").onmouseup = function () { doSelect(); }; // Needed for arrowkey buttons to work.
+    document.getElementById("scaleField").onkeyup = function () { doScale(); };
+    document.getElementById("scaleField").onmouseup = function () { doScale(); };
+};
 
 function handleKeyKeyPress(e) {
-    if (e.keyCode !== 13) return;
+    if (e.keyCode !== 13)
+        return;
     e.preventDefault(); // Ensure it is only this code that runs
     doSelect();
 };
 
+// Selects the node programmatically, rather than clicking interactively:
 function doSelect() {
-    const key = parseInt($("#keyField").val(), 10);
+    const key = parseInt(document.getElementById("keyField").valueAsNumber, 10);
     const node = myDiagram.findNodeForKey(key);
-    // Selects the node programmatically, rather than clicking interactively:
     myDiagram.select(node);
     if (isNotInViewport(node))
         myDiagram.commandHandler.scrollToPart(node);
@@ -571,11 +570,11 @@ function doSelect() {
 
 /* Scale Slider
 -------------------------------------------------- */
-var slider = document.getElementById("scaleSlider");
+var scaleSlider = document.getElementById("scaleSlider");
 var scaleField = document.getElementById("scaleField");
 
 // Update the current slider value (each time the slider handle is dragged)
-slider.oninput = function () {
+scaleSlider.oninput = function () {
     scaleField.valueAsNumber = myDiagram.scale = parseFloat(this.value);
 }
 
@@ -585,11 +584,11 @@ function handleScaleKeyPress(e) {
     doScale();
 };
 
-$("#scaleField").bind("keyup mouseup", doScale);
-
 function doScale() {
     if (scaleField.value) {
-        slider.value = myDiagram.scale = parseFloat(scaleField.value);
+        myDiagram.scaleComputation = null;
+        scaleSlider.value = myDiagram.scale = parseFloat(scaleField.value);
+        myDiagram.scaleComputation = scalefunc;
     }
 };
 
@@ -600,7 +599,6 @@ function doAutoFit() {
     myDiagram.scaleComputation = scalefunc;
 };
 
-
 function doDownloadImage() {
     const blob = myDiagram.makeImageData({ background: "white", returnType: "blob", callback: myCallback });
 }
@@ -610,13 +608,11 @@ function doDownloadImage() {
 function myCallback(blob) {
     var url = window.URL.createObjectURL(blob);
     const filename = `IVR_Tree-${getFormattedDateTime()}.png`;
-
     var a = document.createElement("a");
     a.style = "display: none";
     a.href = url;
     a.download = filename;
-
-    // IE 11
+    // For IE 11
     if (window.navigator.msSaveBlob !== undefined) {
         window.navigator.msSaveBlob(blob, filename);
         return;
