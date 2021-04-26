@@ -77,11 +77,11 @@ IvrData.getNodeData = function () {
         { key: 17, category: "Terminal", text: "Emily" },
         { key: 18, category: "Terminal", text: "Tony" },
         { key: 19, category: "Terminal", text: "Ken" },
-        { key: 20, question: "Manager" },
-        { key: 21, question: "Associate" },
+        { key: 20, question: "Manager" , group: 24},
+        { key: 21, question: "Associate" , group: 24},
         { key: 22, category: "Terminal", text: "Rachel", group: 24 },
         { key: 23, category: "Terminal", text: "Ronn", group: 24 },
-        { key: 24, category: "Terminal", text: "Group", isGroup: true }
+        { key: 24, category: "Terminal", text: "Representatives", isGroup: true }
     ];
 };
 

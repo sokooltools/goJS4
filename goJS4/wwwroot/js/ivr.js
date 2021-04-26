@@ -1,6 +1,7 @@
 ﻿// =======================================================================================================
 // ivr.js
 // =======================================================================================================
+// ReSharper disable PossiblyUnassignedProperty
 var IvrData = window.IvrData;
 
 var myDiagram;
@@ -28,24 +29,14 @@ function init() {
                 new go.Binding("fill")
             ),
             $(go.TextBlock,
-                { font: "10pt Verdana, sans-serif" },
-                new go.Binding("text")
+                {
+                    font: "10pt Verdana, sans-serif",
+                    editable: true,
+                    isMultiline: false
+                },
+                new go.Binding("text").makeTwoWay()
             )
         );
-
-    // Define the appearance and behavior for Nodes:
-    // First, define the shared context menu for all Nodes, Links, and Groups.
-    // To simplify this code we define a function for creating a context menu button:
-    function makeButton(text, action, visiblePredicate) {
-        return $("ContextMenuButton",
-            $(go.TextBlock, { text: text, font: "9pt Verdana, sans-serif", margin: 2, stretch: go.GraphObject.Horizontal }), // can use  width: 90
-            {
-                click: action
-            },
-            // Don't bind GraphObject.visible if there's no predicate
-            visiblePredicate ? new go.Binding("visible", "",
-                function (o, e) { return o.diagram ? visiblePredicate(o, e) : false; }).ofObject() : {});
-    }
 
     // A context menu is an Adornment with a bunch of buttons in them
     var partContextMenu =
@@ -105,7 +96,7 @@ function init() {
                 maxScale: 5,
                 "draggingTool.dragsTree": true,
                 "commandHandler.deletesTree": true,
-                //scrollMargin: 200,          // allow some empty space to appear when scrolled to the edge of the document
+                //scrollMargin: 20,          // allow some empty space to appear when scrolled to the edge of the document
                 scaleComputation: scalefunc, // This sets the scale incrementation to 0.25
                 layout:
                     $(go.TreeLayout,
@@ -116,6 +107,26 @@ function init() {
                 "undoManager.isEnabled": true
                 //,contextMenu: partContextMenu
             });
+
+    myDiagram.toolManager.dragSelectingTool = new RealtimeDragSelectingTool();
+
+    // Replace the standard DragSelectingTool with one that selects while dragging,
+    // and also only requires overlapping bounds with the dragged box to be selected
+    myDiagram.dragSelectingTool =
+        $(RealtimeDragSelectingTool,
+            { isPartialInclusion: true, delay: 50 },
+            {
+                box: $(go.Part, // replace the magenta box with a red one
+                    { layerName: "Tool", selectable: false },
+                    $(go.Shape,
+                        {
+                            name: "SHAPE",
+                            fill: "rgba(255,0,0,0.1)",
+                            stroke: "red",
+                            strokeWidth: 2
+                        }))
+            }
+        );
 
     // Each regular Node has body consisting of a title followed by a collapsible list of actions,
     // controlled by a PanelExpanderButton, with a TreeExpanderButton underneath the body
@@ -148,10 +159,26 @@ function init() {
                     // The title
                     $(go.TextBlock,
                         {
+                            name: "TitleText",
+                            font: "bold 10pt Verdana, sans-serif",
                             stretch: go.GraphObject.Horizontal,
-                            font: "bold 10pt Verdana, sans-serif"
+                            editable: true,
+                            isMultiline: false, // Don't allow newlines in text.
+                            margin: 2,
+                            textAlign: "center",
+                            alignment: go.Spot.Center,
+                            overflow: go.TextBlock.OverflowEllipsis,
+                            textValidation: (tb, olds, news) =>
+                                news.length <= 16, // New string must be less than or equal to 16.
+                            errorFunction: function (tool, olds, news) {
+                                showError(tool, olds, news, 16);
+                            },
+                            textEdited: function (tb, olds, news) {
+                                const mgr = tb.diagram.toolManager;
+                                mgr.hideToolTip();
+                            }
                         },
-                        new go.Binding("text", "question") //  change "question" to "key" to see effect!
+                        new go.Binding("text", "question").makeTwoWay() //  change "question" to "key" to see effect!
                     ),
                     // The optional list of actions
                     $(go.Panel,
@@ -174,8 +201,7 @@ function init() {
                                 "Choices",
                                 {
                                     alignment: go.Spot.Left,
-                                    font: "10pt Verdana, sans-serif",
-                                    editable: true
+                                    font: "10pt Verdana, sans-serif"
                                 }
                             ),
                             $("PanelExpanderButton",
@@ -227,12 +253,27 @@ function init() {
                 }
             ),
             $(go.TextBlock,
+                "TerminalTextBlock",
                 {
                     font: "10pt Verdana, sans-serif",
-                    isMultiline: false,  // Don't allow newlines in text
-                    editable: true
+                    editable: true,
+                    isMultiline: false, // Don't allow newlines in text.
+                    width: 55,
+                    margin: 2,
+                    textAlign: "center",
+                    alignment: go.Spot.Center,
+                    overflow: go.TextBlock.OverflowEllipsis,
+                    textValidation: (tb, olds, news) =>
+                        news.length <= 16, // New string must be less than or equal to 16.
+                    errorFunction: function (tool, olds, news) {
+                        showError(tool, olds, news, 16);
+                    },
+                    textEdited: function (tb, olds, news) {
+                        const mgr = tb.diagram.toolManager;
+                        mgr.hideToolTip();
+                    }
                 },
-                new go.Binding("text")
+                new go.Binding("text").makeTwoWay()
             )
         )
     );
@@ -394,6 +435,11 @@ function init() {
                 msg = `[Link from: ${part.data.from} to: ${part.data.to}]`;
             }
             document.getElementById("outputLabel").textContent = msg;
+
+            //const idrag = document.getElementById("infoDraggable");
+            //idrag.style.width = "";
+            //idrag.style.height = "";
+
         });
 
     myDiagram.addDiagramListener("ViewportBoundsChanged",
@@ -409,6 +455,38 @@ function init() {
         );
 };
 
+function showError(tool, olds, news, len) {
+    // Create and show tooltip about why editing failed for this textblock.
+    const mgr = tool.diagram.toolManager;
+    mgr.hideToolTip();  // Hide any currently showing tooltip.
+    const node = tool.textBlock.part;
+    // Create a GoJS tooltip, which is an Adornment.
+    const tt = go.GraphObject.make("ToolTip",
+        {
+            "Border.fill": "pink",
+            "Border.stroke": "red",
+            "Border.strokeWidth": 2
+        },
+        go.GraphObject.make(go.TextBlock,
+            `Unable to replace the string '${olds}' with '${news}' on node '${node.key}'
+            because the new string cannot contain more than ${len} characters.`));
+    mgr.showToolTip(tt, node);
+}
+
+// Define the appearance and behavior for Nodes:
+// First, define the shared context menu for all Nodes, Links, and Groups.
+// To simplify this code define a function for creating a context menu button:
+function makeButton(text, action, visiblePredicate) {
+    return go.GraphObject.make("ContextMenuButton",
+        go.GraphObject.make(go.TextBlock, { text: text, font: "9pt Verdana, sans-serif", margin: 2, stretch: go.GraphObject.Horizontal }), // can use  width: 90
+        {
+            click: action
+        },
+        // Don't bind GraphObject.visible if there's no predicate
+        visiblePredicate ? new go.Binding("visible", "",
+            function (o, e) { return o.diagram ? visiblePredicate(o, e) : false; }).ofObject() : {});
+}
+
 function scalefunc(diagram, scale) {
     const oldscale = diagram.scale;
     if (scale > oldscale) {
@@ -419,14 +497,14 @@ function scalefunc(diagram, scale) {
     return oldscale;
 };
 
-function groupInfo(adornment) {  // Takes the tooltip or context menu, not a group node data object
-    const ap = adornment.adornedPart;  // Get the Group that the tooltip adorns
+function groupInfo(contextmenu) {  // Takes the tooltip or context menu, not a group node data object
+    const ap = contextmenu.adornedPart;  // Get the Group that the tooltip adorns
     const mems = ap.memberParts.count;
     var links = 0;
-    g.memberParts.each(function (part) {
+    ap.memberParts.each(function (part) {
         if (part instanceof go.Link) links++;
     });
-    return `Group ${g.data.key}: ${g.data.text}\n${mems} members including ${links} links`;
+    return `Group ${ap.part.data.key}: ${ap.part.data.text}\n${mems} members including the ${links} links`;
 }
 
 // Define the behavior for the Diagram background:
@@ -435,24 +513,30 @@ function diagramInfo(model) {  // Tooltip info for the diagram's model
 };
 
 function showProperties(contextmenu) {
-    var msg = `Properties: `;
-    const p = contextmenu.adornedPart;  // The adornedPart is the Part that the context menu adorns
-    if (p instanceof go.Group) {
+    var msg = "";
+    const ap = contextmenu.adornedPart;  // The adornedPart is the Part that the context menu adorns
+    if (ap instanceof go.Group) {
         msg = groupInfo(contextmenu);
     } else {
         myDiagram.selection.each(function (part) {
             if (part instanceof go.Node) {
-                msg += `[Node key: ${part.data.key}, ${part.data.question ? `question: "${part.data.question}"` : `text: "${part.data.text}"`}`;
-                msg += part.data.group ? ` (member of ${d.group})` : "";
-                msg += "], ";
+                msg += `[Node key: ${lpad(part.data.key)}, ${part.data.question ? `question: "${part.data.question}"` : `text: "${part.data.text}"`}`;
+                msg += part.data.group ? ` (member of Group ${part.data.group})` : "";
+                msg += "]\n";
             } else if (part.isTreeLink) {
-                msg += `[Link from ${part.data.from} to ${part.data.to}], `;
+                msg += `[Link from ${lpad(part.data.from)} to ${lpad(part.data.to)}]\n`;
             }
         });
-        msg = msg.replace(new RegExp(`[${", "}]+$`), ""); // Remove last comma
+        msg = msg.replace(new RegExp(`[${"\n"}]+$`), ""); // Remove last newline character.
+        msg = msg.split(/\n/).sort(); // Create array from the string, then sort it.
+        msg = msg.join("\n"); // Reconstruct the string from the array.
     }
     document.getElementById("eventLabel").textContent = "";
-    document.getElementById("outputLabel").textContent = msg;
+    document.getElementById("outputLabel").textContent = `Properties:\r\n----------------------------------\r\n${msg}`;
+}
+
+function lpad(num) {
+    return num <= 9 ? ` ${num}` : num;
 }
 
 function itemClicked(e, obj) { // Executed by click and doubleclick handlers.
@@ -473,17 +557,17 @@ function itemClicked(e, obj) { // Executed by click and doubleclick handlers.
 };
 
 function canAddQuestionNode(obj) {
-    var part = obj.adornedPart.part;
+    const part = obj.adornedPart.part;
     return (myDiagram.selection.count === 1
         && part instanceof go.Node
-        && part.data.question != undefined
-        && part.data.actions);
+        && part.data.question !== undefined
+        && part.data.actions !== undefined);
 };
 
 function addQuestionNode(e, obj) {
     const selnode = obj.part; // myDiagram.selection.first();
     myDiagram.commit(function (d) {
-        const newaction = { text: "New Action", figure: "SevenPointedStar", fill: "pink" };
+        const newaction = { text: "New Question", figure: "SevenPointedStar", fill: "pink" };
         //selnode.actions.addNodeData(newaction);
 
         // Add a new node to the Model data
@@ -502,11 +586,11 @@ function addQuestionNode(e, obj) {
 };
 
 function canAddTerminalNode(obj) {
-    var part = obj.adornedPart.part;
+    const part = obj.adornedPart.part;
     return (myDiagram.selection.count === 1
         && part instanceof go.Node
-        && part.data.question != undefined
-        && !part.data.actions);
+        && part.data.question !== undefined
+        && part.data.actions === undefined);
 };
 
 function addTerminalNode(e, obj) {
@@ -530,17 +614,18 @@ function getMaxKey() {
 }
 
 function doSave() {
-    document.getElementById("SaveButton").disabled = true;
     const json = myDiagram.model.toJson();
-    alert(json);
+    document.getElementById("eventLabel").textContent = "";
+    document.getElementById("outputLabel").textContent = `${json}`;
+    document.getElementById("SaveButton").disabled = !myDiagram.isModified;;
 };
 
 function enableTooltips() {
-    $('[data-toggle="tooltip"]').tooltip(document.getElementById("enableTooltips").checked ? "enable" : "disable");
-//    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-toggle="tooltip"]'));
-//    tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-//        return  new bootstrap.Tooltip(tooltipTriggerEl);
-//    });
+    window.jQuery('[data-toggle="tooltip"]').tooltip(document.getElementById("enableTooltips").checked ? "enable" : "disable");
+    // const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-toggle="tooltip"]'));
+    // var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+    //     return new bootstrap.Tooltip(tooltipTriggerEl);
+    // });
 };
 
 /* Key and Scale field select
@@ -564,7 +649,7 @@ function doSelect() {
     const key = parseInt(document.getElementById("keyField").valueAsNumber, 10);
     const node = myDiagram.findNodeForKey(key);
     myDiagram.select(node);
-    if (isNotInViewport(node))
+    if (!isInViewport(node))
         myDiagram.commandHandler.scrollToPart(node);
 };
 
@@ -573,14 +658,14 @@ function doSelect() {
 var scaleSlider = document.getElementById("scaleSlider");
 var scaleField = document.getElementById("scaleField");
 
-// Update the current slider value (each time the slider handle is dragged)
+// Update the diagram's scale and current slider value each time the slider handle is dragged.
 scaleSlider.oninput = function () {
     scaleField.valueAsNumber = myDiagram.scale = parseFloat(this.value);
 }
 
 function handleScaleKeyPress(e) {
     if (e.keyCode !== 13) return;
-    e.preventDefault(); // Ensure it is only this code that runs
+    e.preventDefault();
     doScale();
 };
 
@@ -600,12 +685,12 @@ function doAutoFit() {
 };
 
 function doDownloadImage() {
-    const blob = myDiagram.makeImageData({ background: "white", returnType: "blob", callback: myCallback });
+    const blob = myDiagram.makeImageData({ background: "white", returnType: "blob", callback: completeDownload });
 }
 
 // When the blob is complete, make an anchor tag for it and use the tag to initiate a download
 // Works in Chrome, Firefox, Safari, Edge, IE11
-function myCallback(blob) {
+function completeDownload(blob) {
     var url = window.URL.createObjectURL(blob);
     const filename = `IVR_Tree-${getFormattedDateTime()}.png`;
     var a = document.createElement("a");
@@ -617,7 +702,6 @@ function myCallback(blob) {
         window.navigator.msSaveBlob(blob, filename);
         return;
     }
-
     document.body.appendChild(a);
     requestAnimationFrame(function () {
         a.click();
@@ -645,10 +729,14 @@ function getFormattedDateTime() {
         appendLeadingZeroes(dt.getSeconds());
 }
 
-function isNotInViewport(node) {
+function isInViewport(node) {
     // TODO:
-    return true;
+    //const loc = node.actualBounds;
+    //var docloc = myDiagram.transformDocToView(node.location);
+    return false;
 }
+
+// ReSharper restore PossiblyUnassignedProperty
 
 //window.animateNone = function () {
 //    window.custom = false;
